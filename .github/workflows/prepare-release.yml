@@ -16,7 +16,6 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-          token: ${{ secrets.TAP_TOKEN }}
 
       - name: Skip version bump commits
         id: check
