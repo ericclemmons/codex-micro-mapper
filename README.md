@@ -7,8 +7,10 @@ device.
 ## Current scope
 
 - Shows Codex Micro connection and permission status.
-- Includes a built-in **Learn button** flow for discovering `ACT##` events.
-- Records and saves keyboard shortcuts.
+- Uses an interactive device face instead of exposing internal HID identifiers.
+- Captures shortcuts without triggering global-hotkey apps while recording.
+- Recognizes Raycast's synthetic Hyper Key and displays it as `✦`.
+- Saves a mapping only after confirmation from the physical Micro button.
 - Clears a mapping back to pass-through.
 - Ships with the discovered Mic mapping: `ACT10` to `Hyper + Space`.
 - Treats the six illuminated agent keys as Codex-managed.
@@ -37,6 +39,17 @@ The app needs:
 2. **Accessibility** to emit configured keyboard shortcuts.
 
 Use the buttons in the app to open the corresponding System Settings pages.
+You can also right-click the menu-bar icon for permission links, launch-at-login,
+and Quit.
+
+## Map the microphone key
+
+1. Click the microphone key on the device visualization.
+2. Press the keyboard shortcut to record it.
+3. Press the physical Micro microphone key to save.
+
+To remove the shortcut, click the visual microphone key and choose **Clear
+mapping**. The key then passes through without Mapper emitting a shortcut.
 
 ## Development
 

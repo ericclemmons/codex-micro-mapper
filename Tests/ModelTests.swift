@@ -12,10 +12,16 @@ enum ModelTests {
         let unrelated = Array(#"{"m":"other","p":{"k":"ACT10","act":1}}"#.utf8)
         precondition(HIDPayloadParser.parse(report: unrelated) == nil)
 
-        precondition(ShortcutBinding.hyperSpace.displayName == "⌃⌥⇧⌘Space")
+        precondition(ShortcutBinding.hyperSpace.displayName == "✦Space")
 
         let controlA = ShortcutBinding(keyCode: 0, modifiers: 1 << 18)
         precondition(controlA.displayName == "⌃A")
+
+        let raycastHyperSpace = ShortcutBinding(
+            keyCode: 49,
+            modifiers: (1 << 17) | (1 << 18) | (1 << 19) | (1 << 20)
+        )
+        precondition(raycastHyperSpace.displayName == "✦Space")
 
         print("Model tests passed")
     }

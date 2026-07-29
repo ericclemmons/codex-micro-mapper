@@ -6,7 +6,7 @@ APP := $(BUILD)/$(APP_NAME).app
 CONTENTS := $(APP)/Contents
 MACOS := $(CONTENTS)/MacOS
 RESOURCES := $(CONTENTS)/Resources
-SOURCES := Sources/CodexMicroMapperApp.swift Sources/MapperController.swift Sources/HIDListener.swift Sources/Models.swift Sources/Views.swift
+SOURCES := Sources/CodexMicroMapperApp.swift Sources/MapperController.swift Sources/HIDListener.swift Sources/ShortcutCapture.swift Sources/Models.swift Sources/Views.swift
 SWIFTC := CLANG_MODULE_CACHE_PATH=$(abspath $(BUILD)/ModuleCache) swiftc -sdk $(SDK)
 
 .PHONY: app install test clean

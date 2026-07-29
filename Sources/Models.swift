@@ -10,6 +10,11 @@ struct ShortcutBinding: Codable, Equatable {
     )
 
     var displayName: String {
+        let hyperMask: UInt64 = (1 << 17) | (1 << 18) | (1 << 19) | (1 << 20)
+        if modifiers & hyperMask == hyperMask && modifiers & ~hyperMask == 0 {
+            return "✦\(Self.keyName(for: keyCode))"
+        }
+
         var parts: [String] = []
         if modifiers & (1 << 18) != 0 { parts.append("⌃") }
         if modifiers & (1 << 19) != 0 { parts.append("⌥") }
