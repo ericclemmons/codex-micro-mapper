@@ -1,0 +1,50 @@
+name: Prepare Release
+
+on:
+  push:
+    branches: [main]
+    tags-ignore: ["**"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.TAP_TOKEN }}
+
+      - name: Skip version bump commits
+        id: check
+        run: |
+          if git log -1 --pretty=%s | grep -qE "^v[0-9]"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump patch version
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          CURRENT=$(grep -A1 CFBundleShortVersionString Resources/Info.plist | grep string | sed 's/.*<string>\(.*\)<\/string>/\1/')
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
+
+          if git rev-parse "v${NEXT}" >/dev/null 2>&1; then
+            echo "v${NEXT} already tagged, skipping"
+            exit 0
+          fi
+
+          sed -i "s|<string>${CURRENT}</string>|<string>${NEXT}</string>|" Resources/Info.plist
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Resources/Info.plist
+          git commit -m "v${NEXT}"
+          git tag "v${NEXT}"
+          git push origin main
+          git push origin "v${NEXT}"

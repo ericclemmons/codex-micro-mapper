@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+
+      - name: Resolve release tag
+        id: release_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          test -n "$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing certificate
+        env:
+          CERTIFICATE_P12: ${{ secrets.CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="build.keychain"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          echo "$CERTIFICATE_P12" | base64 --decode > cert.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import cert.p12 -k "$KEYCHAIN" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm cert.p12
+
+      - name: Build signed release
+        run: make release CODESIGN_IDENTITY="Developer ID Application"
+
+      - name: Notarize app
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          mkdir -p ~/.private_keys
+          echo "$NOTARY_KEY_P8" | base64 --decode > ~/.private_keys/AuthKey_${NOTARY_KEY_ID}.p8
+          ditto -c -k --keepParent ".build/Codex Micro Mapper.app" notarize.zip
+          xcrun notarytool submit notarize.zip \
+            --key ~/.private_keys/AuthKey_${NOTARY_KEY_ID}.p8 \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --wait
+          xcrun stapler staple ".build/Codex Micro Mapper.app"
+          rm notarize.zip
+          rm -rf ~/.private_keys
+
+      - name: Package app
+        run: ditto -c -k --keepParent ".build/Codex Micro Mapper.app" Codex-Micro-Mapper.zip
+
+      - name: Compute SHA256
+        id: sha
+        run: echo "sha256=$(shasum -a 256 Codex-Micro-Mapper.zip | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.release_tag.outputs.tag }}"
+          NOTES="SHA256: \`${{ steps.sha.outputs.sha256 }}\`"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" Codex-Micro-Mapper.zip --clobber
+            gh release edit "$TAG" --title "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" Codex-Micro-Mapper.zip --title "$TAG" --notes "$NOTES"
+          fi
+
+      - name: Update Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          VERSION="${{ steps.release_tag.outputs.tag }}"
+          VERSION="${VERSION#v}"
+          SHA256="${{ steps.sha.outputs.sha256 }}"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/ericclemmons/homebrew-tap.git" tap
+          cd tap
+          mkdir -p Casks
+          python3 -c "
+          print('''cask \"codex-micro-mapper\" do
+            version \"${VERSION}\"
+            sha256 \"${SHA256}\"
+
+            url \"https://github.com/ericclemmons/codex-micro-mapper/releases/download/v#{version}/Codex-Micro-Mapper.zip\"
+            name \"Codex Micro Mapper\"
+            desc \"Map Work Louder Codex Micro buttons to macOS keyboard shortcuts\"
+            homepage \"https://github.com/ericclemmons/codex-micro-mapper\"
+
+            depends_on arch: :arm64
+            depends_on macos: \">= :ventura\"
+
+            app \"Codex Micro Mapper.app\"
+
+            postflight do
+              system_command \"/usr/bin/xattr\",
+                             args: [\"-dr\", \"com.apple.quarantine\", \"#{appdir}/Codex Micro Mapper.app\"]
+            end
+
+            zap trash: \"~/Library/Preferences/dev.eric.codex-micro-mapper.plist\"
+          end
+          '''.strip())
+          " > Casks/codex-micro-mapper.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/codex-micro-mapper.rb
+          if git diff --cached --quiet; then
+            echo "Tap is already current"
+          else
+            git commit -m "Update codex-micro-mapper to ${VERSION}"
+            git push
+          fi
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain build.keychain || true

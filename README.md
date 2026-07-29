@@ -33,6 +33,14 @@ make install
 open "$HOME/Applications/Codex Micro Mapper.app"
 ```
 
+## Homebrew
+
+After the first signed release is published:
+
+```sh
+brew install --cask ericclemmons/tap/codex-micro-mapper
+```
+
 The app needs:
 
 1. **Input Monitoring** to read Codex Micro reports.
@@ -61,3 +69,10 @@ make app
 
 The app is ad-hoc signed for local use. Rebuilding at the same installed path
 may require macOS to confirm permissions again.
+
+Tagged GitHub releases are Developer-ID signed and notarized. The release
+workflow publishes `Codex-Micro-Mapper.zip` and updates
+`ericclemmons/homebrew-tap` automatically.
+
+The app icon uses the [Codex Micro](https://worklouder.cc/codex-micro) product
+image from Work Louder.
