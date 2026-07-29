@@ -74,5 +74,17 @@ Tagged GitHub releases are Developer-ID signed and notarized. The release
 workflow publishes `Codex-Micro-Mapper.zip` and updates
 `ericclemmons/homebrew-tap` automatically.
 
+Before merging the initial release workflow, configure these Actions secrets:
+
+- `CERTIFICATE_P12`
+- `CERTIFICATE_PASSWORD`
+- `NOTARY_KEY_ID`
+- `NOTARY_ISSUER_ID`
+- `NOTARY_KEY_P8`
+- `TAP_TOKEN`
+
+They match the secrets used by `ericclemmons/aside`; GitHub does not expose
+existing secret values for copying between repositories.
+
 The app icon uses the [Codex Micro](https://worklouder.cc/codex-micro) product
 image from Work Louder.
