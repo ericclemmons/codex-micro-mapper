@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test
+        run: make test
+      - name: Build app
+        run: make app
+      - name: Verify app bundle
+        run: |
+          codesign --verify --deep --strict ".build/Codex Micro Mapper.app"
+          test -f ".build/Codex Micro Mapper.app/Contents/Resources/AppIcon.icns"

@@ -13,12 +13,15 @@ final class MapperController: ObservableObject {
     @Published var mappings: [ButtonMapping]
     @Published var learningMappingID: UUID?
     @Published var recordingShortcutForID: UUID?
+    @Published var confirmingMappingID: UUID?
+    @Published var pendingShortcut: ShortcutBinding?
+    @Published var selectedMappingID: UUID?
     @Published var lastLearnedAction: String?
     @Published var message: String?
     @Published var launchAtLogin = false
 
     private let listener = HIDListener()
-    private var localKeyMonitor: Any?
+    private let shortcutCapture = ShortcutCapture()
     private let mappingsKey = "buttonMappings.v1"
 
     init() {
@@ -41,6 +44,16 @@ final class MapperController: ObservableObject {
                 self?.handle(action)
             }
         }
+        shortcutCapture.onShortcut = { [weak self] shortcut in
+            Task { @MainActor in
+                self?.captured(shortcut)
+            }
+        }
+        shortcutCapture.onCancel = { [weak self] in
+            Task { @MainActor in
+                self?.cancelEditing()
+            }
+        }
 
         let status = listener.start()
         inputPermissionGranted = status == kIOReturnSuccess
@@ -51,50 +64,56 @@ final class MapperController: ObservableObject {
         }
     }
 
-    deinit {
-        if let localKeyMonitor {
-            NSEvent.removeMonitor(localKeyMonitor)
+    func beginMapping(_ mapping: ButtonMapping) {
+        cancelEditing()
+        selectedMappingID = mapping.id
+        if mapping.actionID != nil {
+            beginShortcutRecording(mapping)
+            return
         }
-    }
-
-    func beginLearning(_ mapping: ButtonMapping) {
-        cancelShortcutRecording()
         learningMappingID = mapping.id
-        lastLearnedAction = nil
-        message = "Press the Codex Micro button you want to map."
+        message = "Press this button on the Codex Micro."
     }
 
     func cancelLearning() {
         learningMappingID = nil
-        message = nil
+        if recordingShortcutForID == nil && confirmingMappingID == nil { message = nil }
     }
 
     func beginShortcutRecording(_ mapping: ButtonMapping) {
-        cancelLearning()
-        cancelShortcutRecording()
+        shortcutCapture.stop()
+        learningMappingID = nil
         recordingShortcutForID = mapping.id
-        message = "Press the keyboard shortcut. Escape cancels; Delete clears."
-
-        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            Task { @MainActor in
-                self?.record(event)
-            }
-            return nil
+        selectedMappingID = mapping.id
+        confirmingMappingID = nil
+        pendingShortcut = nil
+        message = "Press the keyboard shortcut you want to assign."
+        if !shortcutCapture.start() {
+            recordingShortcutForID = nil
+            message = "Shortcut capture needs Accessibility permission."
         }
     }
 
     func cancelShortcutRecording() {
-        if let localKeyMonitor {
-            NSEvent.removeMonitor(localKeyMonitor)
-            self.localKeyMonitor = nil
-        }
+        shortcutCapture.stop()
         recordingShortcutForID = nil
-        if learningMappingID == nil { message = nil }
+        if learningMappingID == nil && confirmingMappingID == nil { message = nil }
+    }
+
+    func cancelEditing() {
+        shortcutCapture.stop()
+        learningMappingID = nil
+        recordingShortcutForID = nil
+        confirmingMappingID = nil
+        pendingShortcut = nil
+        selectedMappingID = nil
+        message = nil
     }
 
     func clearShortcut(_ mapping: ButtonMapping) {
         update(mapping.id) { $0.shortcut = nil }
-        message = "Mapping cleared. The button now passes through unchanged."
+        cancelEditing()
+        message = "Cleared. This button now passes through to Codex."
     }
 
     func addMapping() {
@@ -160,9 +179,25 @@ final class MapperController: ObservableObject {
             update(mappingID) { $0.actionID = action.id }
             lastLearnedAction = action.id
             learningMappingID = nil
-            message = "Learned \(action.id). Now record a keyboard shortcut."
+            if let mapping = mappings.first(where: { $0.id == mappingID }) {
+                beginShortcutRecording(mapping)
+            }
             return
         }
+
+        if let mappingID = confirmingMappingID,
+           let mapping = mappings.first(where: { $0.id == mappingID }),
+           mapping.actionID == action.id,
+           action.pressed,
+           let shortcut = pendingShortcut
+        {
+            update(mappingID) { $0.shortcut = shortcut }
+            cancelEditing()
+            message = "Saved \(shortcut.displayName)."
+            return
+        }
+
+        if selectedMappingID != nil { return }
 
         guard let mapping = mappings.first(where: {
             $0.actionID == action.id && $0.shortcut != nil
@@ -171,27 +206,12 @@ final class MapperController: ObservableObject {
         send(shortcut, pressed: action.pressed)
     }
 
-    private func record(_ event: NSEvent) {
+    private func captured(_ shortcut: ShortcutBinding) {
         guard let mappingID = recordingShortcutForID else { return }
-        if event.keyCode == 53 {
-            cancelShortcutRecording()
-            return
-        }
-        if event.keyCode == 51 || event.keyCode == 117 {
-            update(mappingID) { $0.shortcut = nil }
-            cancelShortcutRecording()
-            message = "Shortcut cleared."
-            return
-        }
-
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let shortcut = ShortcutBinding(
-            keyCode: event.keyCode,
-            modifiers: UInt64(flags.rawValue)
-        )
-        update(mappingID) { $0.shortcut = shortcut }
-        cancelShortcutRecording()
-        message = "Saved \(shortcut.displayName)."
+        recordingShortcutForID = nil
+        pendingShortcut = shortcut
+        confirmingMappingID = mappingID
+        message = "\(shortcut.displayName) captured. Press the physical Micro button to save."
     }
 
     private func send(_ shortcut: ShortcutBinding, pressed: Bool) {
